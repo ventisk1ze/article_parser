@@ -6,8 +6,10 @@ from selenium import webdriver
 from selenium.webdriver.common.by import By
 from selenium.webdriver.chrome.options import Options
 from selenium.webdriver.support.ui import WebDriverWait
-from selenium.common.exceptions import NoSuchElementException, TimeoutException, NoSuchShadowRootException
+from selenium.common.exceptions import NoSuchElementException
 from selenium.webdriver.support import expected_conditions as EC
+
+from utils import is_pm
 
 DATE_PATTERN = re.compile(
     r'\b(\d{1,2})\s+([Jj]anuary|[Ff]ebruary|[Mm]arch|[Aa]pril|[Mm]ay|[Jj]une|[Jj]uly|[Aa]ugust|[Ss]eptember|[Oo]ctober|[Nn]ovember|[Dd]ecember)\s+(\d{4})\b'
@@ -37,8 +39,12 @@ class IEEEParser:
         wait.until(
             EC.presence_of_all_elements_located((By.CLASS_NAME, 'pagination-bar'))
         )
+        
+        # Get pages
         pagination_bar = self.driver.find_element(By.CLASS_NAME, 'pagination-bar')
         pagination_links = pagination_bar.find_elements(By.TAG_NAME, 'button')[:-1]
+        
+        # Process pages
         for i in range(len(pagination_links)):
             start = datetime.now()
             if i != 0:
@@ -47,16 +53,22 @@ class IEEEParser:
                 pagination_bar.find_elements(By.TAG_NAME, 'button')[i].click()
             
             print(f'Processing page {i+1}')
+            
+            # Get search results
             wait.until(
                 EC.presence_of_all_elements_located((By.CLASS_NAME, 'List-results-items'))
             )
             search_results = self.driver.find_elements(By.CLASS_NAME, 'List-results-items')
             suitable_results = (sr for sr in search_results if self.is_suitable_search_result(sr))
             links = [self.find_link(sr) for sr in suitable_results]
+            
+            # Process search results
             for link in links:
                 if not link:
                     continue
                 self.driver.get(link)
+                
+                # Detemine the date of publication
                 try:
                     date_string = ' '.join(DATE_PATTERN.findall(self.driver.page_source)[0])
                     date = datetime.strptime(date_string, '%d %B %Y').date()
@@ -65,13 +77,24 @@ class IEEEParser:
                 if date < datetime.strptime('01.10.2025', '%d.%m.%Y').date():
                     continue
 
+                # Check if article is about PM
+                title = self.driver.find_element(By.CLASS_NAME, 'document-title').text
+                abstract = [x.text for x in self.driver.find_elements(By.CLASS_NAME, 'u-mb-1') if 'Abstract' in x.text][0]
+                is_pm_response = is_pm(title, abstract)
+                print(is_pm_response)
+                if is_pm_response['is_suitable'] == 'False':
+                    continue
+                
+                # Find the PDF button
                 pdf_button = self.driver.find_element(By.CLASS_NAME, 'xpl-btn-pdf')
                 pdf_link = pdf_button.get_attribute('href')
 
+                # Go to PDF
                 pdf_button.click()
                 if 'denied' in self.driver.current_url:
                     self.driver.get(pdf_link)
 
+                # Download file
                 wait.until(EC.presence_of_all_elements_located((By.TAG_NAME, 'iframe')))
                 frames = self.driver.find_elements(By.TAG_NAME, 'iframe')
                 for frame in frames:
@@ -100,10 +123,10 @@ class IEEEParser:
     def is_suitable_search_result(element):
         try:
             element.find_element(By.CLASS_NAME, 'icon-access-open-access')
-            # link = element.find_element(By.CLASS_NAME, 'fw-bold')
+            element.find_element(By.CLASS_NAME, 'fw-bold')
+            # TODO: logging of which element is not found
         except NoSuchElementException:
             return False
-        # return bool(re.findall('Process Mining|Event Log', link.text, re.IGNORECASE))
         return True
     
     def create_stealth_headless_driver(self):

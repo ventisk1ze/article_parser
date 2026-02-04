@@ -4,3 +4,4 @@ __pycache__/
 downloads
 page.html
 .DS_Store
+config.yaml

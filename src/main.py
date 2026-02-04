@@ -2,12 +2,8 @@ import traceback
 from parsers import IEEEParser
 
 def main(link):
-    try:
-        p = IEEEParser(link)
-        p.parse()
-    except Exception as e:
-        traceback.print_exception(e)
-        p.save_to_html()
+    p = IEEEParser(link)
+    p.parse()
 
 
 if __name__ == '__main__':
